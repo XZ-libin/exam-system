@@ -304,6 +304,9 @@ a:hover { text-decoration: underline; }
   --el-table-header-bg-color: transparent;
   background: transparent;
 }
+/* 单元格内容一律不允许溢出到相邻列：叠字最常见的原因是固定列或列宽不够 */
+.el-table .cell { overflow: hidden; overflow-wrap: anywhere; }
+.el-table .cell .el-button + .el-button { margin-left: 6px; }
 .el-table th.el-table__cell {
   background: transparent;
   font-size: 12px;

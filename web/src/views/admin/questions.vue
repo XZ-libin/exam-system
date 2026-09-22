@@ -568,7 +568,7 @@ onMounted(() => {
           <el-table-column label="更新时间" width="150">
             <template #default="{ row }"><span class="num">{{ timeText(row.updateTime || row.createTime) }}</span></template>
           </el-table-column>
-          <el-table-column label="操作" width="130" fixed="right">
+          <el-table-column label="操作" min-width="130">
             <template #default="{ row }">
               <el-button text :disabled="!canEdit" @click="openEdit(row)">编辑</el-button>
               <el-button text :disabled="!canEdit" @click="remove(row)">删除</el-button>

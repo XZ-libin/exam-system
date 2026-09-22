@@ -381,7 +381,7 @@ onMounted(load)
             <span class="num">{{ num(row.avgScore) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="248" fixed="right">
+        <el-table-column label="操作" min-width="248">
           <template #default="{ row }">
             <el-button text size="small" @click="openEdit(row)">编辑</el-button>
             <el-button text size="small" @click="changeStatus(row)">{{ row.status === 1 ? '结束' : '发布' }}</el-button>

@@ -251,7 +251,7 @@ onMounted(() => {
         <el-table-column label="切屏" width="72">
           <template #default="{ row }"><span class="num">{{ num(row.switchCount, 0) }}</span></template>
         </el-table-column>
-        <el-table-column label="操作" width="98" fixed="right">
+        <el-table-column label="操作" min-width="116">
           <template #default="{ row }">
             <el-button text size="small" @click="openDetail(row)">查看答卷</el-button>
           </template>

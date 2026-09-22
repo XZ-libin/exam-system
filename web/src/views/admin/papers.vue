@@ -337,7 +337,7 @@ onMounted(async () => {
         <el-table-column label="更新时间" width="150">
           <template #default="{ row }"><span class="num">{{ timeText(row.updateTime || row.createTime) }}</span></template>
         </el-table-column>
-        <el-table-column label="操作" width="220" fixed="right">
+        <el-table-column label="操作" min-width="220">
           <template #default="{ row }">
             <el-button text :disabled="row.status === 1" :title="row.status === 1 ? '已发布锁定' : ''" @click="goEdit(row)">
               编辑

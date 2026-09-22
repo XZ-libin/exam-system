@@ -286,7 +286,7 @@ onMounted(async () => {
             <span class="num">{{ loginTime(row.lastLoginTime) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="230" fixed="right">
+        <el-table-column label="操作" min-width="230">
           <template #default="{ row }">
             <el-button text :disabled="!canManage" :title="canManage ? '' : lockReason" @click="openEdit(row)">
               编辑

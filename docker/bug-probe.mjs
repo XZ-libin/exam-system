@@ -70,7 +70,7 @@ async function main() {
   // 探针考试 A：允许迟到 60 分钟、切屏上限 2；探针考试 B：迟到 0 分钟
   const examA = (await hit(admin, 'POST', '/exams', {
     paperId: 2, title: '探针A-切屏与并发',
-    startTime: local(new Date(Date.now() - 3600_000)), endTime: local(new Date(Date.now() + 2 * 3600_000)),
+    startTime: local(new Date(Date.now() - 30 * 60_000)), endTime: local(new Date(Date.now() + 2 * 3600_000)),
     durationMinutes: 20, lateMinutes: 60, maxAttempts: 1, audienceType: 1, switchLimit: 2, status: 1,
   })).data
   const examB = (await hit(admin, 'POST', '/exams', {
@@ -123,13 +123,15 @@ async function main() {
     note('2', '切屏上限路径未能测试', false, `进入考试失败：code=${entered.code} ${entered.message}`)
   }
 
-  // 9 禁用账号后旧令牌是否仍可用
-  const victim = await login('20230114')
-  await hit(admin, 'PUT', '/users/16/status', { status: 0 })
+  // 9 禁用账号后旧令牌是否仍可用（按用户名查到真实 id，别再写死）
+  const victimName = '20230114'
+  const victim = await login(victimName)
+  const victimId = (await hit(admin, 'GET', `/users?page=1&size=5&keyword=${victimName}`)).data.records[0].id
+  await hit(admin, 'PUT', `/users/${victimId}/status`, { status: 0 })
   const stillWorks = await hit(victim, 'GET', '/auth/me')
   note('9', '禁用账号后旧令牌仍可用', stillWorks.code === 0,
-    `20230114 已禁用，/auth/me → code=${stillWorks.code} ${stillWorks.data?.user?.realName || stillWorks.message}`)
-  await hit(admin, 'PUT', '/users/16/status', { status: 1 })
+    `${victimName}(id=${victimId}) 已禁用，/auth/me → code=${stillWorks.code} ${stillWorks.data?.user?.realName || stillWorks.message}`)
+  await hit(admin, 'PUT', `/users/${victimId}/status`, { status: 1 })
 
   // 10 清空手机号 / 11 同名账号二次删除
   const uid = (await hit(admin, 'POST', '/users', {

@@ -143,13 +143,19 @@ public class AttemptService {
         LoginUser me = requireLogin();
         ExExam exam = requireExam(examId);
         LocalDateTime now = LocalDateTime.now();
+        // 锁住考试这一行，串行化 attempt_no 的分配：
+        // 不锁的话并发进入会撞 uk_exam_user_attempt（或因为锁空集产生间隙锁而死锁），给学生一个 500
+        examMapper.selectOne(new LambdaQueryWrapper<ExExam>()
+                .eq(ExExam::getId, examId)
+                .last("for update"));
 
+        // 锁定读：并发进入时另一个事务刚提交的答卷，普通快照读在可重复读下看不见
         AnExamRecord resumable = recordMapper.selectOne(new LambdaQueryWrapper<AnExamRecord>()
                 .eq(AnExamRecord::getExamId, examId)
                 .eq(AnExamRecord::getUserId, me.getUserId())
                 .eq(AnExamRecord::getStatus, Dicts.RecordStatus.DOING)
                 .orderByDesc(AnExamRecord::getId)
-                .last("limit 1"));
+                .last("limit 1 for update"));
         if (resumable != null) {
             if (!now.isAfter(resumable.getDeadlineTime())) {
                 return buildPaperVo(exam, resumable, true);
@@ -218,7 +224,7 @@ public class AttemptService {
                     .eq(AnExamRecord::getExamId, examId)
                     .eq(AnExamRecord::getUserId, me.getUserId())
                     .orderByDesc(AnExamRecord::getId)
-                    .last("limit 1"));
+                    .last("limit 1 for update"));
             if (other == null) {
                 throw e;
             }
