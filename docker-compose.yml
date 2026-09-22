@@ -1,0 +1,70 @@
+name: exam-system
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: exam-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: exam123456
+      MYSQL_DATABASE: exam_db
+      TZ: Asia/Shanghai
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_general_ci
+      - --default-time-zone=+08:00
+      - --lower_case_table_names=0
+    ports:
+      - "13306:3306"
+    volumes:
+      - exam-mysql-data:/var/lib/mysql
+      - ./db:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-pexam123456"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - exam-net
+
+  backend:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    container_name: exam-backend
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      DB_HOST: mysql
+      DB_PORT: "3306"
+      DB_NAME: exam_db
+      DB_USER: root
+      DB_PASSWORD: exam123456
+      TZ: Asia/Shanghai
+      JAVA_TOOL_OPTIONS: -Duser.timezone=Asia/Shanghai
+    ports:
+      - "8082:8082"
+    networks:
+      - exam-net
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/web.Dockerfile
+    container_name: exam-web
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "8083:80"
+    networks:
+      - exam-net
+
+volumes:
+  exam-mysql-data:
+
+networks:
+  exam-net:
+    driver: bridge

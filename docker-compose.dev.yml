@@ -1,0 +1,81 @@
+name: exam-system
+
+# 开发模式：源码挂载进容器，后端 spring-boot:run 热重启，前端 vite dev server 热更新
+# 启动：docker compose -f docker-compose.dev.yml up -d
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: exam-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: exam123456
+      MYSQL_DATABASE: exam_db
+      TZ: Asia/Shanghai
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_general_ci
+      - --default-time-zone=+08:00
+    ports:
+      - "13306:3306"
+    volumes:
+      - exam-mysql-data:/var/lib/mysql
+      - ./db:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-pexam123456"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - exam-net
+
+  backend:
+    image: maven:3.9-eclipse-temurin-17
+    container_name: exam-backend
+    working_dir: /workspace
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      DB_HOST: mysql
+      DB_PORT: "3306"
+      DB_NAME: exam_db
+      DB_USER: root
+      DB_PASSWORD: exam123456
+      TZ: Asia/Shanghai
+    command: mvn -B spring-boot:run
+    ports:
+      - "8082:8082"
+    volumes:
+      - ./backend:/workspace
+      - exam-m2-repo:/root/.m2/repository
+    networks:
+      - exam-net
+
+  web:
+    image: node:22-alpine
+    container_name: exam-web
+    working_dir: /workspace
+    depends_on:
+      - backend
+    environment:
+      TZ: Asia/Shanghai
+      npm_config_registry: https://registry.npmmirror.com
+      CHOKIDAR_USEPOLLING: "true"
+      # 容器内访问后端要用服务名，不能写 localhost
+      VITE_API_TARGET: http://backend:8082
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 5173"
+    ports:
+      - "5174:5173"
+    volumes:
+      - ./web:/workspace
+      - exam-web-modules:/workspace/node_modules
+    networks:
+      - exam-net
+
+volumes:
+  exam-mysql-data:
+  exam-m2-repo:
+  exam-web-modules:
+
+networks:
+  exam-net:
+    driver: bridge
