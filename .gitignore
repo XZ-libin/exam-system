@@ -1,0 +1,17 @@
+# 依赖与构建产物：全部由 Docker 镜像内的 npm / maven 现场生成，不进仓库
+node_modules/
+dist/
+target/
+*.jar
+
+# 本地环境与编辑器
+.env
+.env.*
+.idea/
+.vscode/
+*.iml
+
+# 系统与日志
+.DS_Store
+Thumbs.db
+*.log

@@ -1,0 +1,7 @@
+# 构建上下文瘦身：镜像里自己 npm install / mvn package，宿主机产物一律不带进去
+**/node_modules
+**/dist
+**/target
+**/.DS_Store
+**/*.log
+.git

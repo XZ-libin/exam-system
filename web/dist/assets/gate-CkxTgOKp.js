@@ -1,1 +1,0 @@
-import{u as t,v as a,c,i as s,o as n}from"./index-BHQVQBbi.js";const r={class:"page",style:{"padding-top":"96px",color:"var(--ink-3)"}},i={__name:"gate",setup(u){const e=s(),o=t();return a(()=>{e.replace(o.homePath)}),(p,_)=>(n(),c("div",r,"正在进入…"))}};export{i as default};
