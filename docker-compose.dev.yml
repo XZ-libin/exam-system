@@ -41,6 +41,8 @@ services:
       DB_USER: root
       DB_PASSWORD: exam123456
       TZ: Asia/Shanghai
+      # 开发环境打开接口文档，生产默认关闭
+      EXAM_API_DOCS: "true"
     command: mvn -B spring-boot:run
     ports:
       - "8082:8082"

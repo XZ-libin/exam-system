@@ -1,7 +1,10 @@
 package com.exam.service;
 
+import com.exam.common.LikeUtil;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.exam.common.BatchLimit;
 import com.exam.common.BizException;
 import com.exam.common.Dicts;
 import com.exam.common.ErrorCode;
@@ -70,7 +73,7 @@ public class ExamService {
     public PageResult<ExamVo> page(long page, long size, String keyword, Integer status) {
         LambdaQueryWrapper<ExExam> wrapper = new LambdaQueryWrapper<>();
         if (notBlank(keyword)) {
-            wrapper.like(ExExam::getTitle, keyword.trim());
+            wrapper.like(ExExam::getTitle, LikeUtil.escape(keyword.trim()));
         }
         if (status != null) {
             wrapper.eq(ExExam::getStatus, status);
@@ -172,6 +175,12 @@ public class ExamService {
     public void publishScore(Long id) {
         ExExam exam = requireExam(id);
         assertWritable(exam.getCreatorId());
+        long waiting = anExamRecordMapper.selectCount(new LambdaQueryWrapper<AnExamRecord>()
+                .eq(AnExamRecord::getExamId, id)
+                .eq(AnExamRecord::getStatus, Dicts.RecordStatus.WAIT_REVIEW));
+        if (waiting > 0) {
+            throw BizException.param("还有 " + waiting + " 份答卷的主观题未阅完，暂不能发布成绩");
+        }
         ExExam update = new ExExam();
         update.setId(exam.getId());
         update.setScorePublished(Dicts.ScorePublish.PUBLISHED);
@@ -291,6 +300,7 @@ public class ExamService {
         if (audience != Dicts.Audience.ALL && audience != Dicts.Audience.CLASS && audience != Dicts.Audience.NAMED) {
             throw BizException.param("可见范围只能是 1全部学生 / 2指定班级 / 3指定名单");
         }
+        BatchLimit.check(form.getClassNames(), "参考班级");
         if (audience == Dicts.Audience.CLASS && (form.getClassNames() == null || form.getClassNames().isEmpty())) {
             throw BizException.param("指定班级参考时必须填写班级名称");
         }

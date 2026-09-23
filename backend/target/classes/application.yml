@@ -44,12 +44,15 @@ exam:
   # 多选题是否允许漏选得半分
   multiple-half-score: true
 
+# 接口文档默认关闭：匿名访问 /v3/api-docs 等于把整套攻击面清单公开。
+# 开发环境用 EXAM_API_DOCS=true 打开（见 docker-compose.dev.yml）。
 springdoc:
+  api-docs:
+    enabled: ${EXAM_API_DOCS:false}
   swagger-ui:
+    enabled: ${EXAM_API_DOCS:false}
     path: /swagger-ui.html
     tags-sorter: alpha
-  api-docs:
-    path: /v3/api-docs
 
 logging:
   level:

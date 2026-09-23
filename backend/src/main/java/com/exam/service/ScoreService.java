@@ -1,5 +1,9 @@
 package com.exam.service;
 
+import com.exam.common.PageQuery;
+
+import com.exam.common.LikeUtil;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -70,21 +74,21 @@ public class ScoreService {
                 .orderByDesc(AnExamRecord::getId);
         if (keyword != null && !keyword.isBlank()) {
             List<Long> userIds = userMapper.selectList(new LambdaQueryWrapper<SysUser>()
-                            .like(SysUser::getRealName, keyword).or().like(SysUser::getUsername, keyword))
+                            .like(SysUser::getRealName, LikeUtil.escape(keyword)).or().like(SysUser::getUsername, LikeUtil.escape(keyword)))
                     .stream().map(SysUser::getId).toList();
             if (userIds.isEmpty()) {
                 return PageResult.of(List.of(), 0, page, size);
             }
             wrapper.in(AnExamRecord::getUserId, userIds);
         }
-        Page<AnExamRecord> result = recordMapper.selectPage(new Page<>(page, size), wrapper);
+        Page<AnExamRecord> result = recordMapper.selectPage(PageQuery.of(page, size), wrapper);
         return PageResult.of(toRows(result.getRecords()), result.getTotal(), result.getCurrent(), result.getSize());
     }
 
     /** 学生看自己的成绩 */
     public PageResult<Map<String, Object>> myPage(long page, long size, Long examId) {
         Long me = LoginUser.userId();
-        Page<AnExamRecord> result = recordMapper.selectPage(new Page<>(page, size),
+        Page<AnExamRecord> result = recordMapper.selectPage(PageQuery.of(page, size),
                 new LambdaQueryWrapper<AnExamRecord>()
                         .eq(AnExamRecord::getUserId, me)
                         .eq(examId != null, AnExamRecord::getExamId, examId)
@@ -93,7 +97,10 @@ public class ScoreService {
         rows.forEach(row -> {
             ExExam exam = attemptService.requireExam(((Long) row.get("examId")));
             if (notPublished(exam)) {
+                // 未发布时分数一律不给，包括分项，否则学生能反推对错
                 row.put("totalScore", null);
+                row.put("objectiveScore", null);
+                row.put("subjectiveScore", null);
                 row.put("passFlag", null);
                 row.put("scoreHint", "成绩尚未发布");
             }
@@ -154,9 +161,12 @@ public class ScoreService {
         ExExam exam = attemptService.requireExam(record.getExamId());
         ExPaper paper = paperMapper.selectById(exam.getPaperId());
         boolean reviewer = attemptService.canReview();
-        // 学生只有在「成绩已发布」且「自己已交卷」后才能看到答案，防止答题中途用地址栏偷看
+        // 学生要同时满足：成绩已发布 + 自己已交卷 + 这份卷子已阅完，才看得到答案，
+        // 否则「先发布成绩再慢慢阅卷」的卷面答案会提前泄露
         boolean showAnswer = reviewer
-                || (!notPublished(exam) && Dicts.RecordStatus.submitted(record.getStatus()));
+                || (!notPublished(exam)
+                && Dicts.RecordStatus.submitted(record.getStatus())
+                && record.getStatus() != Dicts.RecordStatus.WAIT_REVIEW);
 
         RecordDetailVo vo = new RecordDetailVo();
         vo.setRecordId(record.getId());
@@ -381,6 +391,10 @@ public class ScoreService {
 
     private String csv(Object value) {
         String text = value == null ? "" : String.valueOf(value);
+        // 中和 Excel 公式注入：以 = + - @ 或制表/回车开头的单元格会被当成公式执行
+        if (!text.isEmpty() && "=+-@\t\r".indexOf(text.charAt(0)) >= 0) {
+            text = "'" + text;
+        }
         if (text.contains(",") || text.contains("\"") || text.contains("\n")) {
             return '"' + text.replace("\"", "\"\"") + '"';
         }

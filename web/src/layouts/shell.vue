@@ -36,10 +36,7 @@ const navGroup = computed(() => {
   return studentOnly ? '学生' : '控制台'
 })
 
-const initials = computed(() => {
-  const name = account.displayName || ''
-  return name.length > 2 ? name.slice(-2) : name
-})
+const initials = computed(() => (account.displayName || '').slice(0, 1))
 
 async function signOut() {
   await ElMessageBox.confirm('退出后需要重新登录，确定继续吗？', '退出登录', {

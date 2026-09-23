@@ -211,47 +211,47 @@ onMounted(() => {
         <template #empty>
           <el-empty description="没有符合条件的成绩记录" :image-size="60" />
         </template>
-        <el-table-column label="学生" min-width="132">
+        <el-table-column label="学生" min-width="110">
           <template #default="{ row }">
             <div class="cell-title">{{ row.studentName }}</div>
             <div class="cell-sub">{{ row.username }}</div>
           </template>
         </el-table-column>
-        <el-table-column label="班级" min-width="106">
+        <el-table-column label="班级" min-width="88">
           <template #default="{ row }">{{ row.className || '—' }}</template>
         </el-table-column>
-        <el-table-column label="考试" min-width="176">
+        <el-table-column label="考试" min-width="140">
           <template #default="{ row }">
             <div>{{ row.examTitle }}</div>
             <div class="cell-sub">{{ row.paperTitle }}</div>
           </template>
         </el-table-column>
-        <el-table-column label="客观" width="82">
+        <el-table-column label="客观" width="68">
           <template #default="{ row }"><span class="num">{{ num(row.objectiveScore) }}</span></template>
         </el-table-column>
-        <el-table-column label="主观" width="82">
+        <el-table-column label="主观" width="68">
           <template #default="{ row }"><span class="num">{{ num(row.subjectiveScore) }}</span></template>
         </el-table-column>
-        <el-table-column label="总分" width="96">
+        <el-table-column label="总分" width="80">
           <template #default="{ row }">
             <div class="num cell-strong">{{ num(row.totalScore) }}</div>
             <div class="cell-sub num">/ {{ num(row.fullScore, 0) }}</div>
           </template>
         </el-table-column>
-        <el-table-column label="结果" width="94">
+        <el-table-column label="结果" width="80">
           <template #default="{ row }">
             <span class="tag" :class="resultOf(row).cls">{{ resultOf(row).text }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="交卷时间" min-width="132">
+        <el-table-column label="交卷时间" min-width="120">
           <template #default="{ row }">
             <span class="cell-sub">{{ dateText(row.submitTime) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="切屏" width="72">
+        <el-table-column label="切屏" width="60">
           <template #default="{ row }"><span class="num">{{ num(row.switchCount, 0) }}</span></template>
         </el-table-column>
-        <el-table-column label="操作" min-width="116">
+        <el-table-column label="操作" width="92">
           <template #default="{ row }">
             <el-button text size="small" @click="openDetail(row)">查看答卷</el-button>
           </template>

@@ -451,6 +451,15 @@ async function downloadTemplate() {
   }
 }
 
+/** 左树占掉 268px 后表格只剩 780px 左右，动作收进下拉才不会把「操作」列推出卡片 */
+function runAction(cmd, row) {
+  if (cmd === 'edit') {
+    openEdit(row)
+  } else if (cmd === 'remove') {
+    remove(row)
+  }
+}
+
 onMounted(() => {
   loadTree()
   load()
@@ -533,16 +542,16 @@ onMounted(() => {
         </div>
 
         <el-table v-loading="loading" :data="rows" row-key="id">
-          <el-table-column label="题干" min-width="300">
+          <el-table-column label="题干" min-width="180">
             <template #default="{ row }">
               <div class="clamp-2">{{ row.content }}</div>
               <div v-if="row.categoryName" class="cell-meta">{{ row.categoryName }}</div>
             </template>
           </el-table-column>
-          <el-table-column label="题型" width="96">
+          <el-table-column label="题型" width="84">
             <template #default="{ row }"><span class="tag">{{ row.qTypeName }}</span></template>
           </el-table-column>
-          <el-table-column label="难度" width="110">
+          <el-table-column label="难度" width="96">
             <template #default="{ row }">
               <div class="level-cell">
                 <span class="dots">
@@ -552,26 +561,33 @@ onMounted(() => {
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="分值" width="80">
+          <el-table-column label="分值" width="64">
             <template #default="{ row }"><span class="num">{{ row.score }}</span></template>
           </el-table-column>
-          <el-table-column label="引用" width="80">
+          <el-table-column label="引用" width="60">
             <template #default="{ row }"><span class="num">{{ row.useCount || 0 }}</span></template>
           </el-table-column>
-          <el-table-column label="状态" width="80">
+          <el-table-column label="状态" width="70">
             <template #default="{ row }">
               <span class="tag" :class="row.status === 1 ? 'tag-ok' : 'tag-quiet'">
                 {{ row.status === 1 ? '可用' : '停用' }}
               </span>
             </template>
           </el-table-column>
-          <el-table-column label="更新时间" width="150">
+          <el-table-column label="更新时间" width="124">
             <template #default="{ row }"><span class="num">{{ timeText(row.updateTime || row.createTime) }}</span></template>
           </el-table-column>
-          <el-table-column label="操作" min-width="130">
+          <el-table-column label="操作" width="92">
             <template #default="{ row }">
-              <el-button text :disabled="!canEdit" @click="openEdit(row)">编辑</el-button>
-              <el-button text :disabled="!canEdit" @click="remove(row)">删除</el-button>
+              <el-dropdown trigger="click" @command="(cmd) => runAction(cmd, row)">
+                <el-button text size="small">操作</el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="edit" :disabled="!canEdit">编辑</el-dropdown-item>
+                    <el-dropdown-item command="remove" :disabled="!canEdit">删除</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
             </template>
           </el-table-column>
           <template #empty>

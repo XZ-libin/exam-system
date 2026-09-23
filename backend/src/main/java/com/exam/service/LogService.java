@@ -1,5 +1,9 @@
 package com.exam.service;
 
+import com.exam.common.PageQuery;
+
+import com.exam.common.LikeUtil;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.exam.common.PageResult;
@@ -48,9 +52,9 @@ public class LogService {
         LambdaQueryWrapper<SysOpLog> wrapper = new LambdaQueryWrapper<SysOpLog>()
                 .eq(action != null && !action.isBlank(), SysOpLog::getAction, action)
                 .and(keyword != null && !keyword.isBlank(), w -> w
-                        .like(SysOpLog::getUsername, keyword).or()
-                        .like(SysOpLog::getTarget, keyword))
+                        .like(SysOpLog::getUsername, LikeUtil.escape(keyword)).or()
+                        .like(SysOpLog::getTarget, LikeUtil.escape(keyword)))
                 .orderByDesc(SysOpLog::getId);
-        return PageResult.of(opLogMapper.selectPage(new Page<>(page, size), wrapper));
+        return PageResult.of(opLogMapper.selectPage(PageQuery.of(page, size), wrapper));
     }
 }

@@ -1,6 +1,7 @@
 com/exam/dto/GradingForm.class
 com/exam/entity/SysRole.class
 com/exam/common/ExamProperties$Jwt.class
+com/exam/common/LikeUtil.class
 com/exam/service/QuestionService.class
 com/exam/entity/ExPaperQuestion.class
 com/exam/vo/ExamPaperVo$Question.class
@@ -68,6 +69,7 @@ com/exam/dto/AttemptForm.class
 com/exam/entity/QzCategory.class
 com/exam/common/Dicts$CorrectFlag.class
 com/exam/entity/SysOpLog.class
+com/exam/common/PageQuery.class
 com/exam/dto/GradingForm$Item.class
 com/exam/vo/ExamPaperVo$Option.class
 com/exam/controller/ExamController$StatusForm.class
@@ -106,5 +108,6 @@ com/exam/service/PaperService.class
 com/exam/mapper/AnAnswerItemMapper.class
 com/exam/controller/StatController.class
 com/exam/service/CategoryService.class
+com/exam/common/BatchLimit.class
 com/exam/entity/ExExamClass.class
 com/exam/controller/UserController.class

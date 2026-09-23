@@ -320,6 +320,10 @@ a:hover { text-decoration: underline; }
 .el-table .cell { line-height: 1.7; }
 .el-table__body tr:hover > td.el-table__cell { background: var(--paper-sunk); }
 .el-table::before, .el-table__inner-wrapper::before { display: none; }
+/* 窗口不够宽时让原生滚动条自己现身：只有真溢出才占位，不会给正常表格拖一条灰线 */
+.el-table .el-scrollbar__wrap { scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+.el-table .el-scrollbar__wrap::-webkit-scrollbar { display: block; height: 8px; }
+.el-table .el-scrollbar__wrap::-webkit-scrollbar-thumb { background: var(--line); border-radius: 999px; }
 
 .el-pagination { --el-pagination-font-size: 13px; justify-content: flex-end; margin-top: 18px; }
 .el-pagination .el-pager li, .el-pagination button { border-radius: 8px; background: transparent; }

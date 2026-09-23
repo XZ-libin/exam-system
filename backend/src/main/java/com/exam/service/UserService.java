@@ -1,8 +1,13 @@
 package com.exam.service;
 
+import com.exam.common.PageQuery;
+
+import com.exam.common.LikeUtil;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.exam.common.BatchLimit;
 import com.exam.common.BizException;
 import com.exam.common.Dicts;
 import com.exam.common.ErrorCode;
@@ -79,14 +84,14 @@ public class UserService {
         final List<Long> filterIds = userIdsOfRole;
         LambdaQueryWrapper<SysUser> wrapper = new LambdaQueryWrapper<SysUser>()
                 .and(keyword != null && !keyword.isBlank(), w -> w
-                        .like(SysUser::getUsername, keyword).or()
-                        .like(SysUser::getRealName, keyword).or()
-                        .like(SysUser::getPhone, keyword))
+                        .like(SysUser::getUsername, LikeUtil.escape(keyword)).or()
+                        .like(SysUser::getRealName, LikeUtil.escape(keyword)).or()
+                        .like(SysUser::getPhone, LikeUtil.escape(keyword)))
                 .eq(className != null && !className.isBlank(), SysUser::getClassName, className)
                 .eq(status != null, SysUser::getStatus, status)
                 .in(filterIds != null, SysUser::getId, filterIds == null ? List.of(-1L) : filterIds)
                 .orderByDesc(SysUser::getId);
-        Page<SysUser> result = userMapper.selectPage(new Page<>(page, size), wrapper);
+        Page<SysUser> result = userMapper.selectPage(PageQuery.of(page, size), wrapper);
         List<UserVo> vos = toVoList(result.getRecords());
         return PageResult.of(vos, result.getTotal(), result.getCurrent(), result.getSize());
     }
@@ -107,13 +112,15 @@ public class UserService {
                         Collectors.mapping(l -> roleById.get(l.getRoleId()), Collectors.toList())));
 
         List<UserVo> list = new ArrayList<>();
+        // 联系方式只有管理员需要（导出、通知）；教师按班级和姓名工作，不批量拿到学生手机号/邮箱
+        boolean canSeeContact = LoginUser.hasRole(Dicts.Role.ADMIN);
         for (SysUser user : users) {
             UserVo vo = new UserVo();
             vo.setId(user.getId());
             vo.setUsername(user.getUsername());
             vo.setRealName(user.getRealName());
-            vo.setPhone(user.getPhone());
-            vo.setEmail(user.getEmail());
+            vo.setPhone(canSeeContact ? user.getPhone() : maskPhone(user.getPhone()));
+            vo.setEmail(canSeeContact ? user.getEmail() : maskEmail(user.getEmail()));
             vo.setClassName(user.getClassName());
             vo.setAvatar(user.getAvatar());
             vo.setStatus(user.getStatus());
@@ -184,6 +191,24 @@ public class UserService {
 
     private String emptyToNull(String value) {
         return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private static String maskPhone(String phone) {
+        if (phone == null || phone.length() < 7) {
+            return "";
+        }
+        return phone.substring(0, 3) + "****";
+    }
+
+    private static String maskEmail(String email) {
+        if (email == null || email.isBlank()) {
+            return "";
+        }
+        int at = email.indexOf('@');
+        if (at < 1) {
+            return "***";
+        }
+        return email.charAt(0) + "***" + email.substring(at);
     }
 
     @Transactional
@@ -269,6 +294,7 @@ public class UserService {
         if (roles == null || roles.isEmpty()) {
             return List.of(Dicts.Role.STUDENT);
         }
+        BatchLimit.check(roles, "角色");
         List<String> distinct = roles.stream().filter(r -> r != null && !r.isBlank())
                 .map(String::trim).distinct().toList();
         if (distinct.isEmpty()) {

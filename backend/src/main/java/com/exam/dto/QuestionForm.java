@@ -2,7 +2,10 @@ package com.exam.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
@@ -26,6 +29,7 @@ public class QuestionForm {
     private Integer qType;
 
     @NotBlank(message = "题干不能为空")
+    @Size(max = 5000, message = "题干不能超过 5000 字")
     private String content;
 
     /** 单选/多选必填；判断、填空、简答留空 */
@@ -35,12 +39,15 @@ public class QuestionForm {
     @NotNull(message = "标准答案不能为空")
     private List<String> answer;
 
+    @Size(max = 2000, message = "解析不能超过 2000 字")
     private String analysis;
 
     /** 1最易 - 5最难，不传按 3 */
     private Integer difficulty;
 
     /** 默认分值，不传按 2.0 */
+    @DecimalMin(value = "0.5", message = "每题分值不能低于 0.5")
+    @DecimalMax(value = "100", message = "每题分值不能超过 100")
     private BigDecimal score;
 
     /** 0停用 1启用，不传按 1 */

@@ -234,7 +234,7 @@ onMounted(() => loadList())
           </button>
           <el-empty v-if="!listLoading && !list.length" description="暂无待阅卷答卷" :image-size="56" />
         </div>
-        <el-pagination v-model:current-page="filter.page" v-model:page-size="filter.size" background small
+        <el-pagination v-model:current-page="filter.page" v-model:page-size="filter.size" background size="small"
                        :total="total" layout="prev, pager, next" @current-change="() => loadList()" />
       </aside>
 

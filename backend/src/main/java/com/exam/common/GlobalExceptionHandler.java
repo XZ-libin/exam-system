@@ -10,6 +10,9 @@ import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.web.servlet.NoHandlerFoundException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -63,6 +66,20 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Result<Void>> handleMethodNotSupported(HttpRequestMethodNotSupportedException e) {
         return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED)
                 .body(Result.fail(ErrorCode.BAD_PARAM, "接口不支持 " + e.getMethod() + " 请求"));
+    }
+
+    /** 路径写错或资源不存在，应当是 404，不该冒 500 */
+    @ExceptionHandler({NoResourceFoundException.class, NoHandlerFoundException.class})
+    public ResponseEntity<Result<Void>> handleNotFound(Exception e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(Result.fail(ErrorCode.NOT_FOUND, "接口不存在"));
+    }
+
+    /** 字段超长、数值越界等数据库层拦下来的写入，翻译成参数错误而不是 500 */
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public Result<Void> handleIntegrity(DataIntegrityViolationException e) {
+        log.warn("数据写入被拒绝: {}", e.getMostSpecificCause().getMessage());
+        return Result.fail(ErrorCode.BAD_PARAM, "字段长度或取值超出允许范围，请检查后重试");
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)

@@ -257,6 +257,19 @@ async function remove(row) {
   }
 }
 
+/** 动作收进下拉，列宽才塞得进卡片；状态决定可选项，与原来逐个铺按钮时一致 */
+function runAction(cmd, row) {
+  if (cmd === 'edit') {
+    goEdit(row)
+  } else if (cmd === 'publish') {
+    publish(row)
+  } else if (cmd === 'archive') {
+    archive(row)
+  } else if (cmd === 'remove') {
+    remove(row)
+  }
+}
+
 onMounted(async () => {
   load()
   try {
@@ -305,46 +318,53 @@ onMounted(async () => {
       </div>
 
       <el-table v-loading="loading" :data="rows" row-key="id">
-        <el-table-column label="试卷" min-width="260">
+        <el-table-column label="试卷" min-width="186">
           <template #default="{ row }">
             <div class="cell-strong">{{ row.title }}</div>
             <div class="cell-meta">{{ row.categoryName || '未归学科' }}</div>
           </template>
         </el-table-column>
-        <el-table-column label="题数" width="80">
+        <el-table-column label="题数" width="60">
           <template #default="{ row }"><span class="num">{{ row.questionCount ?? 0 }}</span></template>
         </el-table-column>
-        <el-table-column label="总分" width="90">
+        <el-table-column label="总分" width="68">
           <template #default="{ row }"><span class="num">{{ row.totalScore ?? 0 }}</span></template>
         </el-table-column>
-        <el-table-column label="及格线" width="90">
+        <el-table-column label="及格线" width="74">
           <template #default="{ row }"><span class="num">{{ row.passScore ?? '—' }}</span></template>
         </el-table-column>
-        <el-table-column label="组卷方式" width="110">
+        <el-table-column label="组卷方式" width="88">
           <template #default="{ row }">{{ buildText(row.buildType) }}</template>
         </el-table-column>
-        <el-table-column label="状态" width="96">
+        <el-table-column label="状态" width="80">
           <template #default="{ row }">
             <span class="tag" :class="statusTag(row.status).cls">{{ statusTag(row.status).text }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="创建人" width="110">
+        <el-table-column label="创建人" width="80">
           <template #default="{ row }">{{ row.creatorName || '—' }}</template>
         </el-table-column>
-        <el-table-column label="被考次数" width="100">
+        <el-table-column label="被考次数" width="76">
           <template #default="{ row }"><span class="num">{{ row.examCount ?? 0 }}</span></template>
         </el-table-column>
-        <el-table-column label="更新时间" width="150">
+        <el-table-column label="更新时间" width="124">
           <template #default="{ row }"><span class="num">{{ timeText(row.updateTime || row.createTime) }}</span></template>
         </el-table-column>
-        <el-table-column label="操作" min-width="220">
+        <el-table-column label="操作" width="92">
           <template #default="{ row }">
-            <el-button text :disabled="row.status === 1" :title="row.status === 1 ? '已发布锁定' : ''" @click="goEdit(row)">
-              编辑
-            </el-button>
-            <el-button v-if="row.status !== 1" text @click="publish(row)">发布</el-button>
-            <el-button v-if="row.status === 1" text @click="archive(row)">归档</el-button>
-            <el-button text @click="remove(row)">删除</el-button>
+            <el-dropdown trigger="click" @command="(cmd) => runAction(cmd, row)">
+              <el-button text size="small">操作</el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="edit" :disabled="row.status === 1">
+                    编辑{{ row.status === 1 ? '（已发布锁定）' : '' }}
+                  </el-dropdown-item>
+                  <el-dropdown-item v-if="row.status !== 1" command="publish">发布</el-dropdown-item>
+                  <el-dropdown-item v-if="row.status === 1" command="archive">归档</el-dropdown-item>
+                  <el-dropdown-item divided command="remove">删除</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </template>
         </el-table-column>
         <template #empty>

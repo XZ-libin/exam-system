@@ -1,8 +1,13 @@
 package com.exam.service;
 
+import com.exam.common.PageQuery;
+
+import com.exam.common.LikeUtil;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.exam.common.BatchLimit;
 import com.exam.common.BizException;
 import com.exam.common.Dicts;
 import com.exam.common.ErrorCode;
@@ -87,9 +92,9 @@ public class QuestionService {
                 .eq(difficulty != null, QzQuestion::getDifficulty, difficulty)
                 .eq(status != null, QzQuestion::getStatus, status)
                 .eq(creatorId != null, QzQuestion::getCreatorId, creatorId)
-                .like(text != null && !text.isEmpty(), QzQuestion::getContent, text)
+                .like(text != null && !text.isEmpty(), QzQuestion::getContent, LikeUtil.escape(text))
                 .orderByDesc(QzQuestion::getId);
-        Page<QzQuestion> result = questionMapper.selectPage(new Page<>(page, size), wrapper);
+        Page<QzQuestion> result = questionMapper.selectPage(PageQuery.of(page, size), wrapper);
         return PageResult.of(toVoList(result.getRecords()), result.getTotal(), result.getCurrent(), result.getSize());
     }
 
@@ -114,6 +119,7 @@ public class QuestionService {
             throw BizException.param("题目 id 不能为空");
         }
         QzQuestion current = load(form.getId());
+        assertWritable(current.getCreatorId());
         validate(form);
         QzQuestion entity = toEntity(form, current.getCreatorId());
         // 用 UpdateWrapper 逐列 set：改成判断/填空时 options 要真的写回 NULL，
@@ -135,11 +141,22 @@ public class QuestionService {
     @Transactional(rollbackFor = Exception.class)
     public void delete(Long id) {
         QzQuestion current = load(id);
+        assertWritable(current.getCreatorId());
         int useCount = current.getUseCount() == null ? 0 : current.getUseCount();
         if (useCount > 0) {
             throw new BizException(ErrorCode.QUESTION_USED_BY_PAPER, "该题已被 " + useCount + " 套试卷引用，不能删除");
         }
         questionMapper.deleteById(id);
+    }
+
+    /** 题库按「谁建的谁改，管理员可改全部」授权，避免另一位教师悄悄改掉我的题 */
+    private void assertWritable(Long creatorId) {
+        if (LoginUser.hasRole(Dicts.Role.ADMIN)) {
+            return;
+        }
+        if (creatorId == null || !creatorId.equals(LoginUser.userId())) {
+            throw BizException.forbidden("只能修改自己创建的题目");
+        }
     }
 
     /**
@@ -150,6 +167,7 @@ public class QuestionService {
     @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> batchCreate(List<QuestionForm> forms) {
         List<QuestionForm> items = forms == null ? List.of() : forms;
+        BatchLimit.check(items, "批量新增题目");
         List<String> messages = new ArrayList<>();
         int saved = saveForms(items, sequenceLabels(items), messages);
         return result(items.size(), saved, messages);
@@ -579,6 +597,7 @@ public class QuestionService {
     private int parseBlocks(String text, Long categoryId, List<QuestionForm> items,
                             List<String> labels, List<String> messages) {
         List<String> blocks = splitBlocks(text);
+        BatchLimit.check(blocks, "导入题目");
         for (int i = 0; i < blocks.size(); i++) {
             String label = "第 " + (i + 1) + " 题";
             try {

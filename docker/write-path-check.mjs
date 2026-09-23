@@ -36,7 +36,7 @@ const cleanup = async () => {
   }
   for (const id of created.exams) await drop(`exams/${id}`, 'DELETE', `/exams/${id}`)
   for (const id of created.papers) await drop(`papers/${id}`, 'DELETE', `/papers/${id}`)
-  for (const id of created.questions) await drop(`questions/${id}`, 'DELETE', `/questions/${id}`)
+  for (const id of new Set(created.questions)) await drop(`questions/${id}`, 'DELETE', `/questions/${id}`)
   for (const id of created.categories) await drop(`categories/${id}`, 'DELETE', `/categories/${id}`)
   for (const id of created.users) await drop(`users/${id}`, 'DELETE', `/users/${id}`)
 }
@@ -111,7 +111,7 @@ try {
   const emptyPaper = (await call('POST', '/papers', { title: '空卷', categoryId, passScore: 3, suggestMinutes: 10 })).data
   created.papers.push(emptyPaper)
   check('空卷不允许发布', (await call('PUT', `/papers/${emptyPaper}/publish`)).code === 3012)
-  check('归档试卷', (await call('PUT', `/papers/${emptyPaper}/archive`)).code === 0)
+  check('未发布的草稿卷不能归档', (await call('PUT', `/papers/${emptyPaper}/archive`)).code === 1003)
   check('被引用的题目删除被拒', (await call('DELETE', `/questions/${questionId}`)).code === 2012)
 
   // ---------- 考试 ----------
@@ -137,6 +137,11 @@ try {
   check('非法状态被拒', (await call('PUT', `/exams/${examId}/status`, { status: 7 })).code !== 0)
   check('强制收卷（0 份）', (await call('POST', `/exams/${examId}/force-submit`)).code === 0)
   check('成绩发布', (await call('POST', `/exams/${examId}/publish-score`)).code === 0)
+  // 归档放在考试断言之后：被考试引用的试卷要留着判分，先删考试才能归档
+  check('被考试引用的试卷不能归档', (await call('PUT', `/papers/${paperId}/archive`)).code === 1002)
+  check('删除无答卷的考试', (await call('DELETE', `/exams/${examId}`)).code === 0)
+  created.exams = created.exams.filter((x) => x !== examId)
+  check('归档已发布试卷', (await call('PUT', `/papers/${paperId}/archive`)).code === 0)
 
   // ---------- 用户 ----------
   const userId = (await call('POST', '/users', {

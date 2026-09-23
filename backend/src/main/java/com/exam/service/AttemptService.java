@@ -1,7 +1,9 @@
 package com.exam.service;
 
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.exam.common.BatchLimit;
 import com.exam.common.BizException;
 import com.exam.common.Dicts;
 import com.exam.common.ErrorCode;
@@ -149,7 +151,23 @@ public class AttemptService {
                 .eq(ExExam::getId, examId)
                 .last("for update"));
 
-        // 锁定读：并发进入时另一个事务刚提交的答卷，普通快照读在可重复读下看不见
+        // 先做与「新开/续考」都相关的状态校验：考试被结束或时间已过，就不能再作答了
+        if (exam.getStatus() != null && exam.getStatus() == Dicts.ExamStatus.CLOSED) {
+            throw BizException.of(ErrorCode.EXAM_ENDED, "本场考试已被结束");
+        }
+        if (exam.getStatus() == null || exam.getStatus() != Dicts.ExamStatus.PUBLISHED) {
+            throw BizException.of(ErrorCode.EXAM_NOT_START, "该考试尚未发布");
+        }
+        if (now.isBefore(exam.getStartTime())) {
+            throw BizException.of(ErrorCode.EXAM_NOT_START, "考试还未开始");
+        }
+        if (now.isAfter(exam.getEndTime())) {
+            throw BizException.of(ErrorCode.EXAM_ENDED, "考试已结束");
+        }
+        if (!visibleTo(exam, me)) {
+            throw BizException.of(ErrorCode.EXAM_NO_PERMISSION, "你不在本场考试的参考范围内");
+        }
+
         AnExamRecord resumable = recordMapper.selectOne(new LambdaQueryWrapper<AnExamRecord>()
                 .eq(AnExamRecord::getExamId, examId)
                 .eq(AnExamRecord::getUserId, me.getUserId())
@@ -164,24 +182,12 @@ public class AttemptService {
             throw BizException.of(ErrorCode.RECORD_TIME_UP, "本次作答时间已用完，请重新进入查看结果");
         }
 
-        if (exam.getStatus() == null || exam.getStatus() != Dicts.ExamStatus.PUBLISHED) {
-            throw BizException.of(ErrorCode.EXAM_NOT_START, "该考试尚未发布");
-        }
-        if (now.isBefore(exam.getStartTime())) {
-            throw BizException.of(ErrorCode.EXAM_NOT_START, "考试还未开始");
-        }
-        if (now.isAfter(exam.getEndTime())) {
-            throw BizException.of(ErrorCode.EXAM_ENDED, "考试已结束");
-        }
-        // 0 分钟就是「不允许迟到」，不能当成「不限制」——不限制请用 lateMinutes 留一个较大的值
+        // 以下只对「新开一次作答」生效
         int lateMinutes = exam.getLateMinutes() == null ? 0 : exam.getLateMinutes();
         if (now.isAfter(exam.getStartTime().plusMinutes(lateMinutes))) {
             throw BizException.of(ErrorCode.EXAM_TOO_LATE, lateMinutes <= 0
                     ? "本场考试不允许迟到入场，已超过开始时间"
                     : "开考超过 " + lateMinutes + " 分钟，不能再进入本场考试");
-        }
-        if (!visibleTo(exam, me)) {
-            throw BizException.of(ErrorCode.EXAM_NO_PERMISSION, "你不在本场考试的参考范围内");
         }
         int maxAttempts = exam.getMaxAttempts() == null ? 1 : exam.getMaxAttempts();
         long used = recordMapper.selectCount(new LambdaQueryWrapper<AnExamRecord>()
@@ -251,6 +257,7 @@ public class AttemptService {
     @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> saveAnswers(Long recordId, AttemptForm.Save form) {
         requireOwnRecord(recordId);
+        BatchLimit.check(form == null ? null : form.getAnswers(), "作答内容");
         // 行锁住这份答卷：避免「自动保存」与「定时/手动交卷」同时写，导致判分漏掉最后一条答案
         AnExamRecord record = recordMapper.selectOne(new LambdaQueryWrapper<AnExamRecord>()
                 .eq(AnExamRecord::getId, recordId)
@@ -263,11 +270,27 @@ public class AttemptService {
             closeTimedOut(record);
             throw BizException.of(ErrorCode.RECORD_TIME_UP, "作答时间已到，系统已自动交卷");
         }
-        if (form != null && form.getAnswers() != null && !form.getAnswers().isEmpty()) {
+        // 教师中途结束考试或考试窗口已过：把这份答卷就地交掉并告知前端，
+        // 注意这里不能抛异常，否则本事务里的交卷结果会被一起回滚
+        ExExam exam = requireExam(record.getExamId());
+        boolean examClosed = (exam.getStatus() != null && exam.getStatus() == Dicts.ExamStatus.CLOSED)
+                || now.isAfter(exam.getEndTime());
+        if (examClosed) {
+            Map<String, Object> done = doSubmit(record, true);
+            done.put("examClosed", true);
+            done.put("message", "本场考试已结束，你的作答已自动提交");
+            return done;
+        }
+        int saved = 0;
+        if (form != null && form.getAnswers() != null) {
             Map<Long, AnAnswerItem> items = answerItemMapper.selectList(
                             new LambdaQueryWrapper<AnAnswerItem>().eq(AnAnswerItem::getRecordId, recordId)).stream()
                     .collect(Collectors.toMap(AnAnswerItem::getPaperQuestionId, Function.identity()));
             for (AttemptForm.Item item : form.getAnswers()) {
+                // 前端可能传来 null 项或不属于本卷的题号，跳过而不是当成已保存
+                if (item == null || item.getPaperQuestionId() == null) {
+                    continue;
+                }
                 AnAnswerItem exists = items.get(item.getPaperQuestionId());
                 if (exists == null) {
                     continue;
@@ -276,10 +299,11 @@ public class AttemptService {
                 update.setId(exists.getId());
                 update.setUserAnswer(JsonUtil.write(judgeService.normalize(item.getAnswer())));
                 answerItemMapper.updateById(update);
+                saved++;
             }
         }
         Map<String, Object> data = new LinkedHashMap<>();
-        data.put("savedCount", form == null || form.getAnswers() == null ? 0 : form.getAnswers().size());
+        data.put("savedCount", saved);
         data.put("remainingSeconds", remainingSeconds(record));
         data.put("serverTime", now);
         return data;
@@ -292,11 +316,11 @@ public class AttemptService {
             return Map.of("switchCount", nz(record.getSwitchCount()), "forced", false, "remainingSeconds", 0);
         }
         ExExam exam = requireExam(record.getExamId());
-        int count = nz(record.getSwitchCount()) + 1;
-        AnExamRecord update = new AnExamRecord();
-        update.setId(recordId);
-        update.setSwitchCount(count);
-        recordMapper.updateById(update);
+        // 原子自增：读-改-写在并发上报时会少计（5 次只记成 1 次）
+        recordMapper.update(null, new LambdaUpdateWrapper<AnExamRecord>()
+                .setSql("switch_count = switch_count + 1")
+                .eq(AnExamRecord::getId, recordId));
+        int count = nz(recordMapper.selectById(recordId).getSwitchCount());
 
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("switchCount", count);
@@ -325,7 +349,12 @@ public class AttemptService {
         if (!record.getStatus().equals(Dicts.RecordStatus.DOING)) {
             throw BizException.of(ErrorCode.RECORD_ALREADY_SUBMITTED, "本次答卷已经提交过了");
         }
-        return doSubmit(record, false);
+        Map<String, Object> result = doSubmit(record, false);
+        if (Boolean.TRUE.equals(result.get("alreadySubmitted"))) {
+            // 并发点了两次交卷：抢到状态的那次已经判分，这次按「已提交」告诉前端
+            throw BizException.of(ErrorCode.RECORD_ALREADY_SUBMITTED, "本次答卷已经提交过了");
+        }
+        return result;
     }
 
     /** 学生对自己的答卷才有写权限；教师强制收卷走 forceSubmitExam */
@@ -500,7 +529,9 @@ public class AttemptService {
         vo.setTotalScore(paper == null ? null : paper.getTotalScore());
         vo.setPassScore(paper == null ? null : paper.getPassScore());
         vo.setQuestionCount(questions.size());
-        vo.setDurationMinutes(exam.getDurationMinutes());
+        // 死线会被考试结束时间截断，所以这里返回本次真实可用的分钟数，
+        // 避免界面写着「限时 30 分钟」而实际只剩 5 分钟
+        vo.setDurationMinutes((int) Math.max(1, Math.ceil(remainingSeconds(record) / 60.0)));
         vo.setStartTime(record.getStartTime());
         vo.setDeadlineTime(record.getDeadlineTime());
         vo.setRemainingSeconds(remainingSeconds(record));

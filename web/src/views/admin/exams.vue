@@ -294,6 +294,21 @@ async function remove(row) {
   }
 }
 
+/** 一行最多 5 个动作，收进下拉才不会把「操作」列挤出卡片 */
+function runAction(cmd, row) {
+  if (cmd === 'edit') {
+    openEdit(row)
+  } else if (cmd === 'status') {
+    changeStatus(row)
+  } else if (cmd === 'publishScore') {
+    publishScore(row)
+  } else if (cmd === 'forceSubmit') {
+    forceSubmit(row)
+  } else if (cmd === 'remove') {
+    remove(row)
+  }
+}
+
 onMounted(load)
 </script>
 
@@ -327,13 +342,13 @@ onMounted(load)
         <template #empty>
           <el-empty description="还没有考试场次，点右上角新建考试" :image-size="60" />
         </template>
-        <el-table-column label="考试 / 试卷" min-width="210">
+        <el-table-column label="考试 / 试卷" min-width="170">
           <template #default="{ row }">
             <div class="cell-title">{{ row.title }}</div>
             <div class="cell-sub">{{ row.paperTitle || '试卷已删除' }} · 满分 {{ num(row.paperTotalScore, 0) }}</div>
           </template>
         </el-table-column>
-        <el-table-column label="时间窗" min-width="170">
+        <el-table-column label="时间窗" min-width="144">
           <template #default="{ row }">
             <div class="cell-sub lines">
               <div>{{ dateTime(row.startTime) }}</div>
@@ -341,18 +356,14 @@ onMounted(load)
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="时长" width="106">
+        <el-table-column label="时长 / 次数" min-width="122">
           <template #default="{ row }">
-            <span class="num">{{ num(row.durationMinutes, 0) }}</span> 分钟
+            <span class="num">{{ num(row.durationMinutes, 0) }}</span> 分钟 ·
+            <span class="num">{{ num(row.maxAttempts, 0) }}</span> 次
             <div class="cell-sub">迟到 {{ num(row.lateMinutes, 0) }} 分可入场</div>
           </template>
         </el-table-column>
-        <el-table-column label="次数" width="72">
-          <template #default="{ row }">
-            <span class="num">{{ num(row.maxAttempts, 0) }}</span> 次
-          </template>
-        </el-table-column>
-        <el-table-column label="范围" min-width="150">
+        <el-table-column label="范围" min-width="118">
           <template #default="{ row }">
             <span v-if="row.audienceType === 1" class="tag">全部学生</span>
             <span v-else-if="row.audienceType === 3" class="tag tag-quiet">指定名单</span>
@@ -371,25 +382,32 @@ onMounted(load)
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="应交 · 实交" width="106">
+        <el-table-column label="应交 · 实交" width="84">
           <template #default="{ row }">
             <span class="num">{{ num(row.expectedCount, 0) }} · {{ num(row.submittedCount, 0) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="平均分" width="88">
+        <el-table-column label="平均分" width="70">
           <template #default="{ row }">
             <span class="num">{{ num(row.avgScore) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" min-width="248">
+        <el-table-column label="操作" width="92">
           <template #default="{ row }">
-            <el-button text size="small" @click="openEdit(row)">编辑</el-button>
-            <el-button text size="small" @click="changeStatus(row)">{{ row.status === 1 ? '结束' : '发布' }}</el-button>
-            <el-button v-if="row.status !== 0 && row.scorePublished !== 1" text size="small" @click="publishScore(row)">
-              成绩发布
-            </el-button>
-            <el-button v-if="row.state === 2" text size="small" @click="forceSubmit(row)">强制收卷</el-button>
-            <el-button text size="small" @click="remove(row)">删除</el-button>
+            <el-dropdown trigger="click" @command="(cmd) => runAction(cmd, row)">
+              <el-button text size="small">操作</el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="edit">编辑</el-dropdown-item>
+                  <el-dropdown-item command="status">{{ row.status === 1 ? '结束考试' : '发布考试' }}</el-dropdown-item>
+                  <el-dropdown-item v-if="row.status !== 0 && row.scorePublished !== 1" command="publishScore">
+                    成绩发布
+                  </el-dropdown-item>
+                  <el-dropdown-item v-if="row.state === 2" command="forceSubmit">强制收卷</el-dropdown-item>
+                  <el-dropdown-item divided command="remove">删除</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </template>
         </el-table-column>
       </el-table>

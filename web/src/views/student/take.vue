@@ -133,6 +133,14 @@ async function sendSave(ids) {
   if (res && res.remainingSeconds != null) {
     remaining.value = Math.max(0, Number(res.remainingSeconds))
   }
+  if (res && res.examClosed) {
+    // 教师中途结束考试：后端已把这份卷交掉，这里停止计时并跳到结果页
+    blocked.value = true
+    stopTimers()
+    ElMessage.warning(res.message || '本场考试已结束，作答已自动提交')
+    goResult()
+    return
+  }
   snapshot.forEach(([id, key]) => {
     if (keyOf(answers[id]) === key) changed.delete(id)
   })

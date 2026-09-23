@@ -1,8 +1,11 @@
 package com.exam.service;
 
+import com.exam.common.LikeUtil;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.exam.common.BatchLimit;
 import com.exam.common.BizException;
 import com.exam.common.Dicts;
 import com.exam.common.ErrorCode;
@@ -79,7 +82,7 @@ public class PaperService {
                                     Long categoryId, Integer buildType) {
         LambdaQueryWrapper<ExPaper> wrapper = new LambdaQueryWrapper<>();
         if (notBlank(keyword)) {
-            wrapper.like(ExPaper::getTitle, keyword.trim());
+            wrapper.like(ExPaper::getTitle, LikeUtil.escape(keyword.trim()));
         }
         if (status != null) {
             wrapper.eq(ExPaper::getStatus, status);
@@ -131,6 +134,7 @@ public class PaperService {
 
     @Transactional(rollbackFor = Exception.class)
     public Long create(PaperForm form) {
+        requireCategory(form.getCategoryId());
         ExPaper paper = new ExPaper();
         paper.setTitle(form.getTitle().trim());
         paper.setDescription(form.getDescription());
@@ -154,9 +158,10 @@ public class PaperService {
         }
         ExPaper paper = requirePaper(form.getId());
         assertWritable(paper.getCreatorId());
-        if (Objects.equals(paper.getStatus(), Dicts.PaperStatus.PUBLISHED)) {
-            throw new BizException(ErrorCode.PAPER_PUBLISHED_LOCKED, "已发布试卷不允许修改，请先新建副本");
+        if (!Objects.equals(paper.getStatus(), Dicts.PaperStatus.DRAFT)) {
+            throw new BizException(ErrorCode.PAPER_PUBLISHED_LOCKED, "只有草稿试卷可以修改，已发布/已归档请先新建副本");
         }
+        requireCategory(form.getCategoryId());
         paper.setTitle(form.getTitle().trim());
         paper.setDescription(form.getDescription());
         paper.setCategoryId(form.getCategoryId());
@@ -182,15 +187,31 @@ public class PaperService {
         }
         // 逻辑删除：deleted 置 1，题目快照保留，历史答卷仍可追溯
         exPaperMapper.deleteById(id);
-        refreshUseCount();
+        bumpUseCount(snapshotQuestionIds(id), -1);
     }
 
-    /** 题库引用计数按快照表重算；删除试卷后必须回退，否则题目永久显示被引用且无法删除 */
-    private void refreshUseCount() {
+    private List<Long> snapshotQuestionIds(Long paperId) {
+        return exPaperQuestionMapper.selectList(new LambdaQueryWrapper<ExPaperQuestion>()
+                        .select(ExPaperQuestion::getQuestionId)
+                        .eq(ExPaperQuestion::getPaperId, paperId))
+                .stream().map(ExPaperQuestion::getQuestionId).distinct().toList();
+    }
+
+    /**
+     * 题目引用计数按增量更新，并且先按 id 排序。
+     * 之前用「相关子查询全表重算」在并发组卷时会死锁：多个事务按不同顺序锁同一批 qz_question 行。
+     */
+    private void bumpUseCount(Collection<Long> questionIds, int delta) {
+        if (questionIds == null || questionIds.isEmpty() || delta == 0) {
+            return;
+        }
+        List<Long> sorted = questionIds.stream().filter(Objects::nonNull).distinct().sorted().toList();
+        if (sorted.isEmpty()) {
+            return;
+        }
         qzQuestionMapper.update(null, new LambdaUpdateWrapper<QzQuestion>()
-                .setSql("use_count = (select count(*) from ex_paper_question pq"
-                        + " join ex_paper p on p.id = pq.paper_id and p.deleted = 0"
-                        + " where pq.question_id = qz_question.id)"));
+                .setSql("use_count = GREATEST(use_count + (" + delta + "), 0)")
+                .in(QzQuestion::getId, sorted));
     }
 
     // ------------------------------------------------------------ 组卷
@@ -200,6 +221,7 @@ public class PaperService {
         if (forms == null || forms.isEmpty()) {
             throw BizException.param("请选择要加入的题目");
         }
+        BatchLimit.check(forms, "试卷题目");
         ExPaper paper = requirePaper(paperId);
         assertWritable(paper.getCreatorId());
         requireDraft(paper);
@@ -230,6 +252,7 @@ public class PaperService {
             writeSnapshot(paperId, question, score, sort);
         }
         recalcTotals(paperId);
+        bumpUseCount(wanted, 1);
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -244,6 +267,7 @@ public class PaperService {
             throw BizException.notFound("题目");
         }
         recalcTotals(paperId);
+        bumpUseCount(List.of(questionId), -1);
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -274,6 +298,7 @@ public class PaperService {
         if (form.getRules() == null || form.getRules().isEmpty()) {
             throw BizException.param("请至少配置一条抽题规则");
         }
+        BatchLimit.check(form.getRules(), "抽题规则");
         ExPaper paper = new ExPaper();
         paper.setTitle(form.getTitle().trim());
         paper.setDescription(form.getDescription());
@@ -320,6 +345,7 @@ public class PaperService {
             }
         }
         recalcTotals(paper.getId());
+        bumpUseCount(drawn, 1);
         return paper.getId();
     }
 
@@ -347,6 +373,9 @@ public class PaperService {
     public void archive(Long id) {
         ExPaper paper = requirePaper(id);
         assertWritable(paper.getCreatorId());
+        if (!Objects.equals(paper.getStatus(), Dicts.PaperStatus.PUBLISHED)) {
+            throw BizException.param("只有已发布的试卷可以归档");
+        }
         long used = countExams(id);
         if (used > 0) {
             throw BizException.forbidden("该试卷已被 " + used + " 场考试使用，不能归档");
@@ -354,6 +383,16 @@ public class PaperService {
         paper.setStatus(Dicts.PaperStatus.ARCHIVED);
         paper.setUpdateTime(null);
         exPaperMapper.updateById(paper);
+    }
+
+    /** 分类必须真实存在，否则试卷列表的科目筛选会出现空归属数据 */
+    private void requireCategory(Long categoryId) {
+        if (categoryId == null) {
+            return;
+        }
+        if (qzCategoryMapper.selectById(categoryId) == null) {
+            throw BizException.param("所属分类不存在，请重新选择");
+        }
     }
 
     // ------------------------------------------------------------ 内部方法
@@ -388,6 +427,11 @@ public class PaperService {
      * 写题目快照。人工组卷与规则抽题共用这一个方法，保证两条路径落库字段完全一致。
      */
     private void writeSnapshot(Long paperId, QzQuestion question, BigDecimal score, int sortNo) {
+        BigDecimal finalScore = score == null ? new BigDecimal("2.0") : score;
+        // 组卷与自动抽题都走这里，分值合法性只判一次：负分/零分会让总分算出无意义结果
+        if (finalScore.compareTo(BigDecimal.ZERO) <= 0 || finalScore.compareTo(new BigDecimal("100")) > 0) {
+            throw BizException.param("每题分值需在 0 到 100 之间，第 " + sortNo + " 题填了 " + finalScore.stripTrailingZeros().toPlainString());
+        }
         ExPaperQuestion row = new ExPaperQuestion();
         row.setPaperId(paperId);
         row.setQuestionId(question.getId());
@@ -397,7 +441,7 @@ public class PaperService {
         row.setAnswer(question.getAnswer());
         row.setAnalysis(question.getAnalysis());
         row.setDifficulty(question.getDifficulty());
-        row.setScore(score == null ? new BigDecimal("2.0") : score);
+        row.setScore(finalScore);
         row.setSortNo(sortNo);
         exPaperQuestionMapper.insert(row);
     }
@@ -412,7 +456,6 @@ public class PaperService {
         update.setTotalScore(sumScore(rows));
         update.setQuestionCount(rows.size());
         exPaperMapper.updateById(update);
-        refreshUseCount();
     }
 
     private BigDecimal sumScore(List<ExPaperQuestion> rows) {

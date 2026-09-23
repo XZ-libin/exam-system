@@ -1,7 +1,12 @@
 package com.exam.service;
 
+import com.exam.common.PageQuery;
+
+import com.exam.common.LikeUtil;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.exam.common.BatchLimit;
 import com.exam.common.BizException;
 import com.exam.common.Dicts;
 import com.exam.common.ErrorCode;
@@ -49,22 +54,27 @@ public class GradingService {
                 .orderByAsc(AnExamRecord::getId);
         if (keyword != null && !keyword.isBlank()) {
             List<Long> userIds = userMapper.selectList(new LambdaQueryWrapper<SysUser>()
-                            .like(SysUser::getRealName, keyword).or().like(SysUser::getUsername, keyword))
+                            .like(SysUser::getRealName, LikeUtil.escape(keyword)).or().like(SysUser::getUsername, LikeUtil.escape(keyword)))
                     .stream().map(SysUser::getId).toList();
             if (userIds.isEmpty()) {
                 return PageResult.of(List.of(), 0, page, size);
             }
             wrapper.in(AnExamRecord::getUserId, userIds);
         }
-        Page<AnExamRecord> result = recordMapper.selectPage(new Page<>(page, size), wrapper);
+        Page<AnExamRecord> result = recordMapper.selectPage(PageQuery.of(page, size), wrapper);
         List<AnExamRecord> records = result.getRecords();
         Map<Long, SysUser> userById = records.isEmpty() ? Map.of()
                 : userMapper.selectBatchIds(records.stream().map(AnExamRecord::getUserId).distinct().toList())
                 .stream().collect(Collectors.toMap(SysUser::getId, Function.identity()));
 
         List<Map<String, Object>> rows = new ArrayList<>();
+        boolean adminOnly = LoginUser.hasRole(Dicts.Role.ADMIN);
         for (AnExamRecord record : records) {
             ExExam exam = attemptService.requireExam(record.getExamId());
+            // 教师只看到自己创建的考试，管理员看全部
+            if (!adminOnly && !LoginUser.userId().equals(exam.getCreatorId())) {
+                continue;
+            }
             SysUser student = userById.get(record.getUserId());
             long pendingCount = answerItemMapper.selectCount(new LambdaQueryWrapper<AnAnswerItem>()
                     .eq(AnAnswerItem::getRecordId, record.getId())
@@ -98,12 +108,22 @@ public class GradingService {
         if (!Dicts.RecordStatus.submitted(record.getStatus())) {
             throw BizException.of(ErrorCode.GRADING_NOT_PENDING, "该答卷还在作答中，暂不能阅卷");
         }
+        ExExam exam = attemptService.requireExam(record.getExamId());
+        if (!LoginUser.hasRole(Dicts.Role.ADMIN) && !LoginUser.userId().equals(exam.getCreatorId())) {
+            throw BizException.forbidden("只能批阅自己创建的考试");
+        }
+        // 行锁住这份答卷：两位教师同时批同一份时，后一个会等前一个提交后再重算总分，
+        // 不会出现「主观题分了、总分却永远算不出来」的丢失更新
+        record = recordMapper.selectOne(new LambdaQueryWrapper<AnExamRecord>()
+                .eq(AnExamRecord::getId, form.getRecordId())
+                .last("for update"));
         Map<Long, AnAnswerItem> items = answerItemMapper.selectList(new LambdaQueryWrapper<AnAnswerItem>()
                         .eq(AnAnswerItem::getRecordId, form.getRecordId())).stream()
                 .collect(Collectors.toMap(AnAnswerItem::getId, Function.identity()));
 
         int graded = 0;
         Long reviewer = LoginUser.userId();
+        BatchLimit.check(form.getItems(), "阅卷明细");
         if (form.getItems() != null) {
             for (GradingForm.Item line : form.getItems()) {
                 AnAnswerItem item = items.get(line.getAnswerItemId());

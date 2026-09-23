@@ -2,6 +2,7 @@ package com.exam.common;
 
 import com.exam.entity.SysUser;
 import com.exam.mapper.SysUserMapper;
+import com.exam.service.UserService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -24,6 +25,7 @@ public class AuthInterceptor implements HandlerInterceptor {
      * → SysUserMapper → sqlSessionFactory 形成启动期循环依赖。
      */
     private final ObjectProvider<SysUserMapper> userMappers;
+    private final ObjectProvider<UserService> userService;
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
@@ -37,12 +39,21 @@ public class AuthInterceptor implements HandlerInterceptor {
         if (header == null || !header.startsWith("Bearer ")) {
             throw BizException.of(ErrorCode.UNAUTHORIZED, "请先登录");
         }
-        LoginUser user = jwtUtil.parse(header.substring(7).trim());
-        // 令牌里写着「他是谁」，但账号可能早被禁用或删除：每个请求回查一次，
-        // 否则被开除的学生凭 12 小时有效的旧令牌还能继续答题。课程项目量级下这一条主键查询可以接受。
-        SysUser account = userMappers.getObject().selectById(user.getUserId());
+        LoginUser parsed = jwtUtil.parse(header.substring(7).trim());
+        // 令牌只当作「某个用户 id 的签名声明」用：角色、班级、姓名一律回库取最新值。
+        // 否则拿到默认密钥就能自签 roles:["ADMIN"] 提权；换班、改角色之后旧令牌也会继续越权。
+        SysUser account = userMappers.getObject().selectById(parsed.getUserId());
         if (account == null || account.getStatus() == null || account.getStatus() != Dicts.Status.ENABLED) {
             throw BizException.of(ErrorCode.ACCOUNT_DISABLED, "账号已被禁用或不存在，请重新登录");
+        }
+        LoginUser user = new LoginUser();
+        user.setUserId(account.getId());
+        user.setUsername(account.getUsername());
+        user.setRealName(account.getRealName());
+        user.setClassName(account.getClassName());
+        user.setRoles(userService.getObject().roleCodes(account.getId()));
+        if (user.getRoles().isEmpty()) {
+            throw BizException.forbidden("该账号还没有分配角色，请联系管理员");
         }
         LoginUser.set(user);
 
