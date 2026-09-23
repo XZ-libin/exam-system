@@ -776,9 +776,14 @@ onMounted(() => {
   align-items: start;
 }
 
-@media (max-width: 960px) {
+/* 左树占掉 268px 后右栏放不下 8 列，1360 以下改成树在上、表在下，保证「操作」列在框内 */
+@media (max-width: 1360px) {
   .split {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .split > .card:first-child {
+    max-width: 360px;
   }
 }
 
