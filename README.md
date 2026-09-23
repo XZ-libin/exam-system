@@ -21,15 +21,17 @@ exam-system/
 ├── docker/                   backend.Dockerfile、web.Dockerfile、nginx.conf
 │   ├── demo-run.mjs          端到端链路 + 演示数据生成
 │   ├── smoke-check.mjs       22 个读接口自检
-│   ├── write-path-check.mjs  50 项写接口断言
+│   ├── write-path-check.mjs  53 项写接口断言
 │   ├── functional-test.mjs   按 7 大模块的功能测试
 │   ├── paper-flow-check.mjs  试卷专项（抽题/分值/快照/锁定）
-│   ├── bug-probe.mjs         历史缺陷复验探针
-│   └── verify-findings.mjs   高危问题复核探针
+│   ├── hardening-check.mjs   并发、跨教师授权、状态机专项
+│   └── security-check.mjs    52 项安全断言（认证/越权/注入/XSS/配置/防作弊）
 ├── db/01_schema.sql          建表（12 表 + 2 视图）
 ├── db/02_seed.sql            演示数据（3 角色 / 16 用户 / 9 分类 / 40 题 / 2 套卷 / 3 场考试）
+├── docs/                     开发计划书（需求、表设计、接口清单、里程碑）
 ├── backend/                  SpringBoot 工程（controller-service-mapper-entity）
-└── web/                      Vue3 工程
+├── web/                      Vue3 工程
+└── LICENSE                   MIT
 ```
 
 ## 3. 启动
@@ -52,6 +54,18 @@ docker compose rm -sf mysql && docker volume rm exam-system_exam-mysql-data && d
 ```
 
 接口文档：`http://localhost:8082/swagger-ui.html`，只在开发模式下开放（`EXAM_API_DOCS=true`）；生产模式默认关掉，避免把接口清单暴露给外部。
+
+### 上线前必改这三处
+
+仓库里为了「clone 下来就能跑」留的是可直接运行的默认值，公网部署前必须换掉：
+
+| 位置 | 现在的值 | 改成 |
+| --- | --- | --- |
+| `application.yml` 的 `exam.jwt.secret` | 仓库里的默认密钥（compose 没覆盖它） | 在 `docker-compose.yml` 的 `backend.environment` 加一行 `JWT_SECRET: <32 字节以上随机串>` |
+| `docker-compose.yml` 的 `MYSQL_ROOT_PASSWORD` / `DB_PASSWORD` | `exam123456` | 强口令，两处要一致 |
+| `docker-compose.yml` 的 `mysql.ports` | `13306:3306`（映射到宿主机，方便答辩连库） | 删掉整段 `ports`，容器网络内部访问就够了 |
+
+另外 `db/02_seed.sql` 灌的是演示数据，16 个账号密码统一 `123456`；正式环境要么改用 `01_schema.sql` 单独建表后自建管理员，要么上线后立即改密并删掉演示账号。
 
 ## 4. 演示账号（初始密码统一 `123456`）
 
@@ -90,8 +104,6 @@ docker run --rm --network exam-system_exam-net -e TZ=Asia/Shanghai \
 | `write-path-check.mjs` | 53 项写接口断言（增删改、校验、越权、导出） | 53/53 |
 | `functional-test.mjs` | 7 大模块功能测试（含强制收卷、自然超时、乱序、续考） | 77/77 |
 | `paper-flow-check.mjs` | 规则抽题、分值校验、快照不可变、发布锁定 | 12/12 |
-| `bug-probe.mjs` | 11 条历史缺陷复验 | 0 条成立 |
-| `verify-findings.mjs` | 9 条高危问题复核 | 0 条成立 |
 | `hardening-check.mjs` | 并发阅卷/组卷/切屏/交卷、跨教师授权、状态机、入参边界 | 16/16 |
 | `security-check.mjs` | 52 项安全断言，分 6 组：认证与会话、越权、SQL 注入、存储型 XSS、配置与响应头、防作弊 | 52 通过 / 0 失败 / 1 风险项 |
 | `demo-run.mjs` | 端到端业务链路 | 通过 |
